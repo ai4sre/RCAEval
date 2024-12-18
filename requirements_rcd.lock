@@ -85,6 +85,7 @@ littleutils==0.2.2
 llvmlite==0.39.1
 markdown-it-py==2.2.0
 mdurl==0.1.2
+metricsifter @ git+https://github.com/ai4sre/metricsifter.git
 multidict==6.0.4
 nanotime==0.5.2
 nest-asyncio==1.5.6

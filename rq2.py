@@ -2,38 +2,34 @@ import argparse
 import glob
 import json
 import os
-import shutil
 import warnings
-from datetime import datetime, timedelta
-from multiprocessing import Pool
-from os.path import abspath, basename, dirname, exists, join
+from datetime import datetime
+from os.path import basename, dirname, join
 
 # turn off all warnings
 warnings.filterwarnings("ignore")
 
 import numpy as np
 import pandas as pd
+from metricsifter.sifter import Sifter
 from tqdm import tqdm
 
 from RCAEval.benchmark.evaluation import Evaluator
 from RCAEval.classes.graph import Node
-
-from RCAEval.io.time_series import drop_constant, drop_time, preprocess
 from RCAEval.utility import (
-    dump_json,
-    is_py310,
-    load_json,
+    download_online_boutique_dataset,
     download_rca_circa_dataset,
     download_rca_rcd_dataset,
-    download_online_boutique_dataset,
     download_sock_shop_1_dataset,
     download_sock_shop_2_dataset,
     download_train_ticket_dataset,
+    dump_json,
+    is_py310,
+    load_json,
 )
 
-
 if is_py310():
-    from RCAEval.e2e import ( 
+    from RCAEval.e2e import (
         circa,
         cloudranger,
         cmlp_pagerank,
@@ -60,7 +56,7 @@ if is_py310():
 
     baro = robust_scaler
 else:
-    from RCAEval.e2e import dummy, e_diagnosis, ht, rcd
+    pass
 
 try:
     from RCAEval.e2e.ges_pagerank import fges_pagerank, fges_randomwalk
@@ -105,6 +101,7 @@ def parse_args():
     parser.add_argument("--length", type=int, default=None, help="Time series length (RQ4)")
     parser.add_argument("--tdelta", type=int, default=0, help="Specify $t_delta$ to simulate delay in anomaly detection")
     parser.add_argument("--test", action="store_true", help="Perform smoke test on certain methods without fully run on all data")
+    parser.add_argument("--reduction", action="store_true", help="Perform metrics reduction")
     args = parser.parse_args()
 
     if args.method not in globals():
@@ -149,7 +146,7 @@ dataset = DATASET_MAP[args.dataset]
 # prepare input paths
 data_paths = list(glob.glob(os.path.join(dataset, "**/data.csv"), recursive=True))
 new_data_paths = []
-for p in data_paths: 
+for p in data_paths:
     if os.path.exists(p.replace("data.csv", "simple_data.csv")):
         new_data_paths.append(p.replace("data.csv", "simple_data.csv"))
     else:
@@ -160,10 +157,9 @@ if args.test is True:
 
 
 # prepare output paths
-from tempfile import TemporaryDirectory
 # output_path = TemporaryDirectory().name
 output_path = "output"
-report_path = join(output_path, f"report.xlsx")
+report_path = join(output_path, "report.xlsx")
 result_path = join(output_path, "results")
 os.makedirs(result_path, exist_ok=True)
 
@@ -174,7 +170,7 @@ def process(data_path):
     run_args = argparse.Namespace()
     run_args.root_path = os.getcwd()
     run_args.data_path = data_path
-    
+
     # convert length from minutes to seconds
     if args.length is None:
         args.length = 10 if not is_synthetic else 2000
@@ -274,6 +270,15 @@ def process(data_path):
 
     try:
         st = datetime.now()
+        # == PREPROCESSING ==
+        if args.reduction:
+            time_col = data.pop('time')
+            sifter = Sifter(penalty_adjust=2.5, bandwidth=10.0, n_jobs=-1)
+            reduced_data = sifter.run(data=data)
+            reduced_data['time'] = time_col
+            print("after reduction:", "rate", 1-reduced_data.shape[1]/data.shape[1], data_path)
+            data = reduced_data
+
         out = func(
             data,
             inject_time,
@@ -449,4 +454,3 @@ else: # for real datasets
 
 print("---")
 print("Avg speed:", avg_speed)
-
